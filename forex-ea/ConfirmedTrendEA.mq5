@@ -30,13 +30,16 @@ input bool   InpCloseAllAtTarget   = true;       // Close open trades once targe
 input ulong  InpMagicNumber        = 20260928;   // Magic number
 input int    InpMaxSpreadPoints    = 30;         // Max allowed spread (points)
 
-input group "=== Trading Window ==="
+input group "=== Trading Window (Malaysia time, GMT+8) ==="
 input bool   InpTradeTuesday   = true;
 input bool   InpTradeWednesday = true;
 input bool   InpTradeThursday  = true;
 input bool   InpMajorPairsOnly = true;    // Only trade recognised major FX pairs
-input int    InpStartHour      = 7;       // Server-hour session start (inclusive)
-input int    InpEndHour        = 20;      // Server-hour session end (exclusive)
+input double InpBrokerGMTOffset = 2.0;    // Broker server time offset from GMT (set per broker, e.g. 2 or 3)
+input int    InpSessionStartHour   = 15;  // Malaysia session start hour   (15:30 = 3:30pm)
+input int    InpSessionStartMinute = 30;
+input int    InpSessionEndHour     = 23;  // Malaysia session end hour     (23:00 = 11:00pm)
+input int    InpSessionEndMinute   = 0;
 
 input group "=== Trend Filter (higher timeframe) ==="
 input ENUM_TIMEFRAMES InpTrendTF   = PERIOD_H1;
@@ -120,8 +123,13 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 bool WithinTradingWindow()
   {
+   // Convert broker server time to Malaysia local time (GMT+8) so the
+   // Tue-Thu day filter and session window both apply in Malaysia time,
+   // regardless of what timezone the broker's server clock runs on.
+   datetime myTime = TimeCurrent() + (datetime)((8.0 - InpBrokerGMTOffset) * 3600.0);
+
    MqlDateTime t;
-   TimeToStruct(TimeCurrent(), t);
+   TimeToStruct(myTime, t);
 
    bool dayOk;
    switch(t.day_of_week)
@@ -134,7 +142,11 @@ bool WithinTradingWindow()
    if(!dayOk)
       return false;
 
-   if(t.hour < InpStartHour || t.hour >= InpEndHour)
+   int nowMinutes   = t.hour * 60 + t.min;
+   int startMinutes = InpSessionStartHour * 60 + InpSessionStartMinute;
+   int endMinutes   = InpSessionEndHour   * 60 + InpSessionEndMinute;
+
+   if(nowMinutes < startMinutes || nowMinutes >= endMinutes)
       return false;
 
    return true;
