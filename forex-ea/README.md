@@ -1,4 +1,4 @@
-# ConfirmedTrendEA v2.20 (MetaTrader 5)
+# ConfirmedTrendEA v2.21 (MetaTrader 5)
 
 One Expert Advisor, attached once, that trades major forex pairs and crypto
 with a trend-pullback strategy and shows an on-chart status dashboard.
@@ -46,6 +46,16 @@ Drawn on the chart where the EA runs (`InpShowDashboard`, dark or light):
 - **Next high-impact events** from MetaTrader's economic calendar, shown in
   Malaysia time with a countdown. This works in the live terminal only and
   depends on the broker providing calendar data.
+
+## Health check and VPS
+
+On start-up the EA prints a health check to the Experts tab (broker connection,
+algo-trading permission, account type and leverage, GMT-offset sanity check, and
+per-symbol lot limits, margin, history and a sizing preview showing which
+symbols would be skipped at your balance). A Broker / Algo / Account / Ping /
+Mode / Health row on the dashboard keeps checking every 30 seconds and logs a
+warning if the connection or algo trading drops. See `VPS.md` for moving it to a
+VPS.
 
 ## Installation
 

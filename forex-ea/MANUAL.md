@@ -130,7 +130,26 @@ days finish positive, and the profit comes from a minority of large winners.
 - Turn off with `InpShowDashboard`, change colours with `InpDashDark`, and move
   it with `InpDashX/Y`.
 
-## 8. Inputs reference
+## 8. Health check
+
+Printed in the Experts tab when the EA starts, and re-checked every 30 seconds
+(live terminal only):
+
+- Terminal: build, broker connection, algo-trading switch, ping, whether it is
+  the MetaQuotes VPS terminal.
+- Account: number, server, demo or real, leverage, hedging or netting, currency
+  and balance.
+- Warnings: no connection, algo trading off, the account blocking EAs, non-USD
+  account currency, counter-trades on a netting account, a broker clock that
+  does not match `InpBrokerGMTOffset`, symbols that are restricted, a minimum lot
+  above your fixed lot, margin above the margin cap, and too little history.
+- Per symbol: lot limits, contract size, margin for your lot, bars loaded.
+- Sizing preview (about 30 seconds in): the lot a typical trade would get on
+  each symbol, or why it would be skipped.
+- Later: a warning when the connection or algo trading drops or returns, and an
+  "alive" line every 6 hours with balance, equity and floating P/L.
+
+## 9. Inputs reference
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -170,7 +189,7 @@ days finish positive, and the profit comes from a minority of large winners.
 | `InpDashPositionRows` / `InpShowCalendar` / `InpCalendarRows` / `InpCalendarHours` | 6 / true / 5 / 72 | Dashboard sections |
 | `InpVerbose` | false | Log why signals are skipped |
 
-## 9. Running it
+## 10. Running it
 
 1. Compile in MetaEditor and fix anything it reports. The source was checked
    only against a compatibility shim, never in MetaEditor.
@@ -180,9 +199,9 @@ days finish positive, and the profit comes from a minority of large winners.
    per-symbol position limit, GMT offset and counter-trade state. Turn on
    `InpVerbose` for the first days to see why signals are skipped.
 4. Run the Strategy Tester first (real ticks, a year or more, each symbol you
-   plan to trade), then a demo forward-test.
+   plan to trade), then a demo forward-test. `VPS.md` covers moving it to a VPS.
 
-## 10. Honest limitations
+## 11. Honest limitations
 
 - The evidence is a bar-level simulation over a limited set of periods. Crypto
   held a modest edge on data not used in design; the forex result was

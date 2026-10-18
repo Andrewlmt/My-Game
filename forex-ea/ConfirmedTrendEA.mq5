@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                              ConfirmedTrendEA.mq5 |
-//|  v2.20  Multi-symbol trend-pullback EA for major forex and crypto |
+//|  v2.21  Multi-symbol trend-pullback EA for major forex and crypto |
 //|         with on-chart dashboard and optional counter-trade        |
 //|                                                                    |
 //|  Attach ONE instance to any chart. It trades every symbol listed  |
@@ -24,7 +24,7 @@
 //|  inconclusive out of sample. No result is a promise of profit.    |
 //+------------------------------------------------------------------+
 #property copyright "Andrew"
-#property version   "2.20"
+#property version   "2.21"
 #property description "Multi-symbol trend-pullback EA with dashboard for major forex and crypto"
 
 #include <Trade\Trade.mqh>
@@ -150,6 +150,7 @@ struct SymState
    double           atr;
    string           state;
    string           lastMsg;
+   bool             previewed;
    bool             ready;
   };
 
@@ -178,6 +179,14 @@ int      gDayConsec = 0;
 
 ENUM_TIMEFRAMES gDashTF[4] = {PERIOD_M15, PERIOD_H1, PERIOD_H4, PERIOD_D1};
 string   gDashTFName[4]    = {"M15", "H1", "H4", "D1"};
+
+bool     gHConn = true;
+bool     gHAlgo = true;
+bool     gHAcct = true;
+double   gHPing = 0.0;
+int      gHealthWarn = 0;
+uint     gHealthTick = 0;
+uint     gAliveTick = 0;
 
 uint     gCalTick = 0;
 int      gCalCount = 0;
@@ -1293,7 +1302,7 @@ void UpdateDashboard()
    int symRows = ArraySize(gS);
    int posRows = MathMax(1, InpDashPositionRows);
    int calRows = InpShowCalendar ? MathMax(1, InpCalendarRows) : 0;
-   DashBackground(symRows + posRows + 13 + (InpShowCalendar ? 1 + calRows : 0));
+   DashBackground(symRows + posRows + 14 + (InpShowCalendar ? 1 + calRows : 0));
 
    int row = 0;
    DashPut("t1", 8, row, "CONFIRMED TREND EA  v2.20", cInfo());
@@ -1329,6 +1338,15 @@ void UpdateDashboard()
    DashMetric("d2", 232, row, "Risk cap/trade", StringFormat("%.1f%%", InpMaxRiskPerTradePct), cText());
    DashMetric("d3", 440, row, "Trail", InpTrailATR > 0.0 ? StringFormat("%.1f ATR", InpTrailATR) : "off", cText());
    DashMetric("d4", 600, row, "Stop", StringFormat("%.1f ATR", InpSLATR), cText());
+   row++;
+
+   DashMetric("f1", 8,   row, "Broker", gHConn ? "connected" : "DISCONNECTED", gHConn ? cGood() : cBad());
+   DashMetric("f2", 170, row, "Algo", gHAlgo ? "ON" : "OFF", gHAlgo ? cGood() : cBad());
+   DashMetric("f3", 252, row, "Account", gHAcct ? "can trade" : "BLOCKED", gHAcct ? cGood() : cBad());
+   DashMetric("f4", 392, row, "Ping", StringFormat("%.0f ms", gHPing), gHPing > 300.0 ? cWarn() : cText());
+   DashMetric("f5", 488, row, "VPS", TerminalInfoInteger(TERMINAL_VPS) ? "MetaQuotes" : "no", cText());
+   DashMetric("f6", 600, row, "Mode", gHedging ? "hedging" : "netting", cText());
+   DashMetric("f7", 720, row, "Health", gHealthWarn == 0 ? "OK" : StringFormat("%d warn (log)", gHealthWarn), gHealthWarn == 0 ? cGood() : cWarn());
    row++;
    row++;
 
@@ -1499,6 +1517,183 @@ void UpdateDashboard()
   }
 
 //+------------------------------------------------------------------+
+//  Health check: what commonly goes wrong on a VPS or a fresh terminal
+//+------------------------------------------------------------------+
+void RefreshHealthFlags()
+  {
+   gHConn = (TerminalInfoInteger(TERMINAL_CONNECTED) != 0);
+   gHAlgo = (TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) != 0 && MQLInfoInteger(MQL_TRADE_ALLOWED) != 0);
+   gHAcct = (AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) != 0 && AccountInfoInteger(ACCOUNT_TRADE_EXPERT) != 0);
+   gHPing = (double)TerminalInfoInteger(TERMINAL_PING_LAST) / 1000.0;
+  }
+
+int RunHealthCheck()
+  {
+   int warn = 0;
+   RefreshHealthFlags();
+   Print("---- ConfirmedTrendEA health check ----");
+   PrintFormat("Terminal build %d | connected %s | algo trading %s | MetaQuotes VPS %s | ping %.0f ms",
+               (int)TerminalInfoInteger(TERMINAL_BUILD), gHConn ? "yes" : "NO", gHAlgo ? "yes" : "NO",
+               TerminalInfoInteger(TERMINAL_VPS) ? "yes" : "no", gHPing);
+
+   long   mode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   string modeTxt = (mode == ACCOUNT_TRADE_MODE_REAL) ? "REAL" : (mode == ACCOUNT_TRADE_MODE_DEMO ? "demo" : "contest");
+   string cur = AccountInfoString(ACCOUNT_CURRENCY);
+   PrintFormat("Account %I64d @ %s | %s | leverage 1:%d | %s | currency %s | balance %.2f",
+               AccountInfoInteger(ACCOUNT_LOGIN), AccountInfoString(ACCOUNT_SERVER), modeTxt,
+               (int)AccountInfoInteger(ACCOUNT_LEVERAGE), gHedging ? "hedging" : "netting/exchange", cur,
+               AccountInfoDouble(ACCOUNT_BALANCE));
+
+   if(!gHConn)
+     {
+      Print("WARNING: terminal is not connected to the broker.");
+      warn++;
+     }
+   if(!gHAlgo)
+     {
+      Print("WARNING: algo trading is OFF. Press the Algo Trading button and tick 'Allow algorithmic trading' in this EA's properties.");
+      warn++;
+     }
+   if(!gHAcct)
+     {
+      Print("WARNING: the account does not allow trading by EAs (investor password, or the broker disabled it).");
+      warn++;
+     }
+   if(cur != "USD" && StringLen(cur) > 0)
+     {
+      Print("NOTE: account currency is ", cur, ". The profit target and dollar figures are in ", cur, ".");
+      warn++;
+     }
+   if(InpCounterEnabled && !gHedging)
+     {
+      Print("WARNING: counter-trades are enabled but the account is netting; they will not run.");
+      warn++;
+     }
+   if(!MQLInfoInteger(MQL_TESTER) && !InpAutoGMTOffset)
+     {
+      double det = MathRound((double)((long)TimeTradeServer() - (long)TimeGMT()) / 1800.0) * 0.5;
+      if(MathAbs(det - InpBrokerGMTOffset) >= 0.5)
+        {
+         PrintFormat("WARNING: the broker clock looks like GMT%+.1f but InpBrokerGMTOffset is %.1f. Session and day filters would be shifted. (Detection relies on this computer's clock and time zone.)",
+                     det, InpBrokerGMTOffset);
+         warn++;
+        }
+     }
+   if(AccountInfoDouble(ACCOUNT_BALANCE) < 50.0)
+     {
+      Print("NOTE: very small balance; most symbols will be skipped by the per-trade risk cap.");
+      warn++;
+     }
+
+   for(int i = 0; i < ArraySize(gS); i++)
+     {
+      string sym = gS[i].sym;
+      double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+      double minLot = SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN);
+      double step   = SymbolInfoDouble(sym, SYMBOL_VOLUME_STEP);
+      double contract = SymbolInfoDouble(sym, SYMBOL_TRADE_CONTRACT_SIZE);
+      double ask = SymbolInfoDouble(sym, SYMBOL_ASK);
+      double lot = (InpLotMode == LOT_FIXED) ? InpFixedLot : minLot;
+      double margin = 0.0;
+      if(ask > 0.0)
+         OrderCalcMargin(ORDER_TYPE_BUY, sym, MathMax(lot, minLot), ask, margin);
+      int barsE = Bars(sym, InpEntryTF);
+      int barsT = Bars(sym, gS[i].trendTF);
+      bool tradable = (SymbolInfoInteger(sym, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_FULL);
+      PrintFormat("%s (%s) | trading %s | lot min %.4f step %.4f | contract %.2f | margin for %.2f lot %.2f (%.1f%% of balance) | bars %d / %d",
+                  sym, gS[i].cls == ASSET_CRYPTO ? "crypto" : "forex", tradable ? "allowed" : "RESTRICTED",
+                  minLot, step, contract, MathMax(lot, minLot), margin, bal > 0.0 ? margin / bal * 100.0 : 0.0, barsE, barsT);
+      if(!tradable)
+        {
+         PrintFormat("WARNING: %s is not fully tradable right now (market closed or restricted).", sym);
+         warn++;
+        }
+      if(InpLotMode == LOT_FIXED && InpFixedLot < minLot - 1.0e-12)
+        {
+         PrintFormat("WARNING: %s minimum lot %.4f is above InpFixedLot %.4f; it will never trade.", sym, minLot, InpFixedLot);
+         warn++;
+        }
+      if(margin > 0.0 && bal > 0.0 && margin > bal * InpMaxMarginUsePct / 100.0)
+        {
+         PrintFormat("WARNING: %s needs %.2f margin for %.2f lot, above %.0f%% of your balance; it will usually be skipped.",
+                     sym, margin, MathMax(lot, minLot), InpMaxMarginUsePct);
+         warn++;
+        }
+      if(barsE < 400 || barsT < 400)
+        {
+         PrintFormat("NOTE: %s has only %d / %d bars loaded so far; indicators need about 400. Scroll the chart back or wait for history to sync.", sym, barsE, barsT);
+         warn++;
+        }
+     }
+   PrintFormat("---- health check finished: %d warning(s) ----", warn);
+   gHealthWarn = warn;
+   return warn;
+  }
+
+// One-off per symbol once its ATR is available: what size would a trade get here?
+void SizingPreview(SymState &s)
+  {
+   double at[];
+   ArraySetAsSeries(at, true);
+   if(CopyBuffer(s.hATR, 0, 0, 3, at) < 3 || at[1] <= 0.0)
+      return;
+   double ask = SymbolInfoDouble(s.sym, SYMBOL_ASK);
+   if(ask <= 0.0)
+      return;
+   s.previewed = true;
+   int    digits = (int)SymbolInfoInteger(s.sym, SYMBOL_DIGITS);
+   double slDist = InpSLATR * at[1];
+   double sl = NormalizeDouble(ask - slDist, digits);
+   string why = "";
+   double lots = ComputeLots(s.sym, ORDER_TYPE_BUY, ask, sl, why);
+   double bal = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(lots <= 0.0)
+     {
+      PrintFormat("SIZING %s: a typical %.1f ATR stop (%s) would be SKIPPED - %s.", s.sym, InpSLATR, DoubleToString(slDist, digits), why);
+      gHealthWarn++;
+      return;
+     }
+   double p = 0.0;
+   OrderCalcProfit(ORDER_TYPE_BUY, s.sym, lots, ask, sl, p);
+   PrintFormat("SIZING %s: a typical %.1f ATR stop (%s) would trade %.4f lot, risking %.2f (%.1f%% of balance).",
+               s.sym, InpSLATR, DoubleToString(slDist, digits), lots, -p, bal > 0.0 ? -p / bal * 100.0 : 0.0);
+  }
+
+void HealthTick()
+  {
+   if(MQLInfoInteger(MQL_TESTER))
+      return;
+   uint nowTick = GetTickCount();
+   if(gHealthTick != 0 && (nowTick - gHealthTick) < 30000)
+      return;
+   gHealthTick = nowTick;
+
+   bool pc = gHConn, pa = gHAlgo, pt = gHAcct;
+   RefreshHealthFlags();
+   if(pc && !gHConn)
+      Print("ConfirmedTrendEA WARNING: connection to the broker was lost.");
+   if(!pc && gHConn)
+      Print("ConfirmedTrendEA: connection to the broker is back.");
+   if(pa && !gHAlgo)
+      Print("ConfirmedTrendEA WARNING: algo trading was switched OFF; no orders can be placed.");
+   if(!pa && gHAlgo)
+      Print("ConfirmedTrendEA: algo trading is ON again.");
+   if(pt && !gHAcct)
+      Print("ConfirmedTrendEA WARNING: the account no longer allows trading by EAs.");
+
+   for(int i = 0; i < ArraySize(gS); i++)
+      if(gS[i].ready && !gS[i].previewed)
+         SizingPreview(gS[i]);
+
+   if(gAliveTick == 0 || (nowTick - gAliveTick) > 21600000)
+     {
+      gAliveTick = nowTick;
+      PrintFormat("ConfirmedTrendEA alive: balance %.2f equity %.2f floating %.2f, %d symbol(s), connected %s",
+                  AccountInfoDouble(ACCOUNT_BALANCE), AccountInfoDouble(ACCOUNT_EQUITY), FloatingPL(), ArraySize(gS), gHConn ? "yes" : "NO");
+     }
+  }
+
+//+------------------------------------------------------------------+
 void ReleaseHandle(int &h)
   {
    if(h != INVALID_HANDLE)
@@ -1543,6 +1738,7 @@ bool InitSymbol(SymState &s, const string sym)
    s.atr = 0.0;
    s.state = "";
    s.lastMsg = "";
+   s.previewed = false;
 
    s.cls = DetectClass(sym);
    if(s.cls == ASSET_NONE)
@@ -1690,6 +1886,7 @@ int OnInit()
       Print("ConfirmedTrendEA: small balance with fixed lots - the per-trade risk cap (", InpMaxRiskPerTradePct,
             "%) will shrink or skip trades whose stop would risk more than that.");
 
+   RunHealthCheck();
    EventSetTimer(1);
    return INIT_SUCCEEDED;
   }
@@ -1748,6 +1945,7 @@ void OnTick()
 void OnTimer()
   {
    RunAll();
+   HealthTick();
    UpdateDashboard();
   }
 //+------------------------------------------------------------------+

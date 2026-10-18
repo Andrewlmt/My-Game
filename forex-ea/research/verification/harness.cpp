@@ -20,7 +20,7 @@ int main(int argc, char** argv){
   for (int i = 2; i < argc; i++){ std::string a = argv[i]; std::vector<std::string> p; std::stringstream ss(a); std::string x; while (std::getline(ss, x, ':')) p.push_back(x);
     if (!loadBars(p[0], p[1])) { std::cerr << "load fail " << p[0] << "\n"; return 2; }
     SymSpec sp; sp.contract = std::stod(p[2]); sp.spread = std::stod(p[3]); sp.digits = std::stoi(p[4]); sp.quoteUSD = p[5] == "1";
-    sp.point = std::pow(10.0, -sp.digits); sp.minLot = 0.0001; sp.maxLot = 1e6; sp.step = 0.0001; gSpec[p[0]] = sp;
+    sp.point = std::pow(10.0, -sp.digits); sp.minLot = getenv("HEALTHDEMO") ? 0.01 : 0.0001; sp.maxLot = 1e6; sp.step = getenv("HEALTHDEMO") ? 0.01 : 0.0001; gSpec[p[0]] = sp;
     symlist += (n++ ? "," : "") + p[0]; }
   InpSymbols = string(" " + symlist + " ,, ");   // exercise the trimming / empty-entry handling
   InpBrokerGMTOffset = 0.0; InpLotMode = LOT_RISK_PERCENT; InpRiskPercent = 1.0; InpMaxRiskPerTradePct = 5.0;
@@ -29,6 +29,7 @@ int main(int argc, char** argv){
   size_t N = gStore.begin()->second.t.size();
   for (auto& kv : gStore) if (kv.second.t.size() != N || kv.second.t[0] != gStore.begin()->second.t[0]) { std::cerr << "symbol bars not aligned\n"; return 3; }
   gCur = (int)N - 1; gNow = gStore.begin()->second.t[gCur];
+  if (getenv("BAL")) gBalance = atof(getenv("BAL"));
   if (OnInit() != INIT_SUCCEEDED) { std::cerr << "OnInit failed\n"; return 4; }
   std::cerr << "active symbols: " << ArraySize(gS) << "  hedging max/symbol=" << gMaxPosSym << "\n";
   size_t maxOpen = 0; int maxEntriesDay = 0; bool dumped = false;
@@ -61,6 +62,7 @@ int main(int argc, char** argv){
   std::ofstream o(out); o << "sym,t0,t1,dir,open,exit,R\n";
   for (auto& r : gRecs) o << r.sym << "," << r.t0 << "," << r.t1 << "," << r.dir << "," << r.open << "," << r.exitPx << "," << r.R << "\n";
   std::cerr << "trades=" << gRecs.size() << " finalBalance=" << gBalance << " maxSimultaneousPositions=" << maxOpen << "\n";
+  if (getenv("PREVIEW")) { for (int i = 0; i < ArraySize(gS); i++) SizingPreview(gS[i]); }
   OnDeinit(0);
   return 0;
 }

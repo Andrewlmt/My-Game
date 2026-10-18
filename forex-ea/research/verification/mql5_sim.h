@@ -41,6 +41,11 @@
 #define StringTrimLeft stub_StringTrimLeft
 #define StringTrimRight stub_StringTrimRight
 #define CTrade StubCTrade
+#define Print stub_Print
+#define PrintFormat stub_PrintFormat
+#define TerminalInfoInteger stub_TerminalInfoInteger
+#define AccountInfoString stub_AccountInfoString
+#define Bars stub_Bars
 #define StringFormat stub_StringFormat
 #define HistoryDealGetString stub_HistoryDealGetString
 #define GlobalVariablesTotal stub_GlobalVariablesTotal
@@ -99,6 +104,11 @@
 #undef StringTrimLeft
 #undef StringTrimRight
 #undef CTrade
+#undef Print
+#undef PrintFormat
+#undef TerminalInfoInteger
+#undef AccountInfoString
+#undef Bars
 #undef StringFormat
 #undef HistoryDealGetString
 #undef GlobalVariablesTotal
@@ -177,6 +187,14 @@ inline int CopyBuffer(int h, int, int start, int count, DArr& out){ out.v.clear(
 template<class T> inline T cvt(T v){ return v; }
 inline const char* cvt(const string& s){ return s.c_str(); }
 template<class... A> inline string StringFormat(const char* fmt, A... a){ char b[1024]; snprintf(b, sizeof b, fmt, cvt(a)...); return string(std::string(b)); }
+inline void pr_one(const char* v){ std::cout << v; } inline void pr_one(const std::string& v){ std::cout << v; } inline void pr_one(const string& v){ std::cout << std::string(v); }
+template<class T> inline void pr_one(T v){ std::cout << v; }
+template<class... A> inline void Print(A... a){ if (getenv("LOG")) { int dummy[] = {0, (pr_one(a), 0)...}; (void)dummy; std::cout << "\n"; } }
+template<class... A> inline void PrintFormat(const char* fmt, A... a){ if (!getenv("LOG")) return; std::string f(fmt), g; for (size_t i = 0; i < f.size(); i++){ if (f.compare(i, 3, "I64") == 0) { g += "ll"; i += 2; } else g += f[i]; }
+  char b[1024]; snprintf(b, sizeof b, g.c_str(), cvt(a)...); std::cout << b << "\n"; }
+inline long TerminalInfoInteger(int w){ if (w == TERMINAL_CONNECTED || w == TERMINAL_TRADE_ALLOWED) return 1; if (w == TERMINAL_PING_LAST) return 45000; if (w == TERMINAL_BUILD) return 5200; return 0; }
+inline string AccountInfoString(int w){ return w == ACCOUNT_SERVER ? string("Demo-Server") : (w == ACCOUNT_CURRENCY ? string("USD") : string("")); }
+inline int Bars(const string&, ENUM_TIMEFRAMES){ return gCur + 1; }
 // ---- broker -------------------------------------------------------
 inline datetime TimeCurrent(){ return (datetime)gNow; }
 inline datetime TimeTradeServer(){ return (datetime)gNow; }
@@ -187,7 +205,7 @@ inline double askOf(const std::string& s){ return bidOf(s) + spreadOf(s); }
 inline double lossConv(const std::string& s, double price){ return gSpec[s].quoteUSD ? 1.0 : 1.0 / price; }
 inline double floatingPL(){ double pl = 0; for (auto& p : gPos){ double px = p.type == 0 ? bidOf(p.sym) : askOf(p.sym);
   pl += (px - p.open) * (p.type == 0 ? 1 : -1) * p.vol * gSpec[p.sym].contract * lossConv(p.sym, px); } return pl; }
-inline long AccountInfoInteger(int what){ return what == ACCOUNT_MARGIN_MODE ? 2 : 0; }
+inline long AccountInfoInteger(int what){ if (what == ACCOUNT_MARGIN_MODE) return 2; if (what == ACCOUNT_TRADE_ALLOWED || what == ACCOUNT_TRADE_EXPERT) return 1; if (what == ACCOUNT_LEVERAGE) return 500; if (what == ACCOUNT_LOGIN) return 5012345; if (what == ACCOUNT_TRADE_MODE) return ACCOUNT_TRADE_MODE_DEMO; return 0; }
 inline double AccountInfoDouble(int what){ if (what == ACCOUNT_MARGIN_LEVEL) return 0; if (what == ACCOUNT_BALANCE) return gBalance; if (what == ACCOUNT_EQUITY) return gBalance + floatingPL(); if (what == ACCOUNT_MARGIN_FREE) return 1e12; return 0; }
 inline int PositionsTotal(){ return (int)gPos.size(); }
 inline ulong PositionGetTicket(int i){ if (i < 0 || i >= (int)gPos.size()) return 0; gSel = i; return gPos[i].ticket; }
@@ -196,7 +214,7 @@ inline double PositionGetDouble(int w){ auto& p = gPos[gSel]; if (w == POSITION_
 inline string PositionGetString(int w){ if (w == POSITION_SYMBOL) return string(gPos[gSel].sym); if (w == POSITION_COMMENT) return string(gPos[gSel].comment); return string(""); }
 inline bool OrderCalcProfit(ENUM_ORDER_TYPE t, const string& s, double vol, double open, double close, double& profit){
   profit = (close - open) * (t == ORDER_TYPE_BUY ? 1 : -1) * vol * gSpec[std::string(s)].contract * lossConv(std::string(s), close); return true; }
-inline bool OrderCalcMargin(ENUM_ORDER_TYPE, const string&, double, double, double& m){ m = 1.0; return true; }
+inline bool OrderCalcMargin(ENUM_ORDER_TYPE, const string& s, double vol, double price, double& m){ m = getenv("HEALTHDEMO") ? vol * gSpec[std::string(s)].contract * price / 500.0 * (gSpec[std::string(s)].quoteUSD ? 1.0 : 1.0 / price * price) : 1.0; return true; }
 inline bool HistorySelect(datetime a, datetime b){ gDealSel.clear(); for (size_t i = 0; i < gDeals.size(); i++) if (gDeals[i].time >= a && gDeals[i].time <= b) gDealSel.push_back((int)i); return true; }
 inline int HistoryDealsTotal(){ return (int)gDealSel.size(); }
 inline ulong HistoryDealGetTicket(int i){ return (ulong)gDealSel[i] + 1; }
@@ -219,7 +237,7 @@ inline string DoubleToString(double v, int d){ char b[64]; snprintf(b, sizeof b,
 inline string TimeToString(datetime t, int){ time_t tt = (time_t)t; struct tm g; gmtime_r(&tt, &g); char b[64]; strftime(b, sizeof b, "%Y.%m.%d %H:%M", &g); return string(std::string(b)); }
 inline double SymbolInfoDouble(const string& s, int w){ auto& sp = gSpec[std::string(s)];
   if (w == SYMBOL_ASK) return askOf(std::string(s)); if (w == SYMBOL_BID) return bidOf(std::string(s)); if (w == SYMBOL_POINT) return sp.point;
-  if (w == SYMBOL_VOLUME_MIN) return sp.minLot; if (w == SYMBOL_VOLUME_MAX) return sp.maxLot; if (w == SYMBOL_VOLUME_STEP) return sp.step; return 0; }
+  if (w == SYMBOL_TRADE_CONTRACT_SIZE) return sp.contract; if (w == SYMBOL_VOLUME_MIN) return sp.minLot; if (w == SYMBOL_VOLUME_MAX) return sp.maxLot; if (w == SYMBOL_VOLUME_STEP) return sp.step; return 0; }
 inline long SymbolInfoInteger(const string& s, int w){ if (w == SYMBOL_DIGITS) return gSpec[std::string(s)].digits; if (w == SYMBOL_TRADE_MODE) return SYMBOL_TRADE_MODE_FULL; return 0; }
 inline bool GlobalVariableCheck(const string& k){ return gGV.count(std::string(k)) > 0; }
 inline bool GlobalVariableSet(const string& k, double v){ gGV[std::string(k)] = v; return true; }

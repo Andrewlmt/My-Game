@@ -108,3 +108,11 @@ inline int CalendarValueHistory(std::vector<MqlCalendarValue>&, datetime, dateti
 inline bool CalendarEventById(ulong, MqlCalendarEvent&){ return false; }
 
 inline double MathAbs(double v){ return std::fabs(v); }
+enum { TERMINAL_CONNECTED, TERMINAL_TRADE_ALLOWED, TERMINAL_PING_LAST, TERMINAL_VPS, TERMINAL_BUILD };
+enum { MQL_TRADE_ALLOWED = 50 };
+enum { ACCOUNT_TRADE_ALLOWED = 200, ACCOUNT_TRADE_EXPERT, ACCOUNT_TRADE_MODE, ACCOUNT_LOGIN, ACCOUNT_LEVERAGE, ACCOUNT_SERVER, ACCOUNT_CURRENCY };
+enum { ACCOUNT_TRADE_MODE_DEMO, ACCOUNT_TRADE_MODE_CONTEST, ACCOUNT_TRADE_MODE_REAL };
+enum { SYMBOL_TRADE_CONTRACT_SIZE = 102 };
+inline long TerminalInfoInteger(int){ return 0; }
+inline string AccountInfoString(int){ return string(""); }
+inline int Bars(const string&, ENUM_TIMEFRAMES){ return 0; }

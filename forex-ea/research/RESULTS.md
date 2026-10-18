@@ -153,6 +153,10 @@ The EA source was compiled (g++, against a small MetaTrader-compatible shim in
   TP1 partial close, break-even move and TP2 behave as in the simulator.
 - Multi-symbol runs with the symbol list (including stray spaces and empty
   entries) trade every listed symbol and respect the 4-position cap.
+- The start-up health check, sizing preview and dashboard rows were exercised
+  through the shim with a fake terminal: the messages print and the warnings
+  trigger as designed. On a $100 account the preview reports BTC as skipped
+  (risk cap below the minimum lot) while ETH trades.
 - The remaining differences are end-of-data handling and sub-pip rounding on
   near-breakeven stops.
 
