@@ -1,4 +1,4 @@
-# ConfirmedTrendEA v2.20 - Strategy & Operating Manual
+# ConfirmedTrendEA v2.21 - Strategy & Operating Manual
 
 ## 1. What it does
 

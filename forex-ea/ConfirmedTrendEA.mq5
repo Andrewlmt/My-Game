@@ -1305,7 +1305,7 @@ void UpdateDashboard()
    DashBackground(symRows + posRows + 14 + (InpShowCalendar ? 1 + calRows : 0));
 
    int row = 0;
-   DashPut("t1", 8, row, "CONFIRMED TREND EA  v2.20", cInfo());
+   DashPut("t1", 8, row, "CONFIRMED TREND EA  v2.21", cInfo());
    DashPut("t2", 230, row, StringFormat("%s MYT", TimeToString(ToMYT(TimeCurrent()), TIME_DATE | TIME_MINUTES)), cText());
    DashPut("t3", 420, row, status, stColor);
    DashPut("t4", 640, row, StringFormat("FX %s   CRYPTO %s", InSessionAt(TimeCurrent(), ASSET_FOREX) ? "OPEN" : "closed",
@@ -1879,7 +1879,7 @@ int OnInit()
       GlobalVariableSet(gBaseKey, AccountInfoDouble(ACCOUNT_BALANCE));
    gBaseline = GlobalVariableGet(gBaseKey);
 
-   PrintFormat("ConfirmedTrendEA v2.20: %d symbol(s) active | entry TF %s | max positions per symbol %d | GMT offset %.1f | counter-trades %s",
+   PrintFormat("ConfirmedTrendEA v2.21: %d symbol(s) active | entry TF %s | max positions per symbol %d | GMT offset %.1f | counter-trades %s",
                ArraySize(gS), EnumToString(InpEntryTF), gMaxPosSym, GmtOffset(), (InpCounterEnabled && gHedging) ? "ON" : "OFF");
    Print("ConfirmedTrendEA: active symbols: ", active);
    if(InpLotMode == LOT_FIXED && AccountInfoDouble(ACCOUNT_BALANCE) < 200.0)
