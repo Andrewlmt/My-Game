@@ -3,7 +3,6 @@
 Input is a pandas DataFrame of H1 OHLC candles in UTC; call prepare() then run().
 The candle files used for RESULTS.md are not stored in this repository.
 
-
 Decisions at the open of bar i from closed bar i-1; bid-based series; buys fill
 at ask (open + spread); sells at bid. Stop-before-target when both touch in one
 bar. Trail/partial/BE updates apply from the next bar. Sizing: fixed risk in USD
@@ -72,7 +71,7 @@ BASE = dict(
     sl_mode="atr", sl_atr=1.5, sw_n=8, sw_buf=0.25, sl_min=1.0, sl_max=2.5,
     partial=False, partial_r=1.0, partial_frac=0.5, be_r=None, chandelier=2.5, tp_r=None,
     max_pos=3, add_if_protected=True, cooldown=2, max_trades_day=6, daily_loss_r=1.4, consec_pause=3,
-    warmup=260, pb_ref="ema20", vol_min=None, flat_end=False, adx_rising=False, flat_fri=False,
+    warmup=260, pb_ref="ema20", vol_min=None, flat_end=False, adx_rising=False, flat_fri=False, counter=False, c_trigger=0.6, c_vol=0.5, c_tp1=1.0, c_tp2=2.5, c_tp1_frac=0.5,
 )
 
 
@@ -134,9 +133,10 @@ def run(d, p):
                     elif dr == -1 and cl < ll20[k - 1] and ext and rsi_[k] > 20 and adx_[k] >= p["bo_adx"]:
                         sig, mode = -1, "bo"
         if sig != 0:
-            same = all(z["dir"] == sig for z in pos)
-            prot = all(z["be"] for z in pos) if p["add_if_protected"] else True
-            blocked = (len(pos) >= p["max_pos"] or not same or (pos and not prot)
+            mains = [z for z in pos if not z.get("is_c")]
+            same = all(z["dir"] == sig for z in mains)
+            prot = all(z["be"] for z in mains) if p["add_if_protected"] else True
+            blocked = (len(mains) >= p["max_pos"] or not same or (mains and not prot)
                        or i - last_entry_i < p["cooldown"] or day_n >= p["max_trades_day"]
                        or (p["daily_loss_r"] is not None and day_r <= -p["daily_loss_r"])
                        or (p["consec_pause"] is not None and day_consec >= p["consec_pause"]))
@@ -156,6 +156,22 @@ def run(d, p):
                                 pdone=False, ext=fill, units=units, mode=mode, t0=idx[i]))
                 last_entry_i, day_n = i, day_n + 1
         spread_b = p["spread_abs"] if p["spread_abs"] else p["spread_pct"] * o[i]
+        if p["counter"]:
+            for pz in list(pos):
+                if pz.get("is_c") or pz.get("hedged"):
+                    continue
+                dr0 = pz["dir"]
+                px_now = o[i] if dr0 == 1 else o[i] + spread_b
+                if dr0 * (px_now - pz["entry"]) / pz["r"] <= -p["c_trigger"]:
+                    cdir = -dr0
+                    cfill = (o[i] + spread_b) if cdir == 1 else o[i]
+                    rc = abs(pz["entry"] - cfill)
+                    if rc <= 0:
+                        continue
+                    pos.append(dict(dir=cdir, entry=cfill, sl=pz["entry"], r=rc, qty=1.0, pnl=0.0, be=False, pdone=False, ext=cfill,
+                                    units=pz["units"] * p["c_vol"], mode="counter", t0=idx[i], is_c=True,
+                                    tp1=cfill + cdir * p["c_tp1"] * rc, tp2=cfill + cdir * p["c_tp2"] * rc))
+                    pz["hedged"] = True
         fri_flat = p["flat_fri"] and dow[i] == 4 and hod[i] >= p["sess"][1] and hod[i - 1] < p["sess"][1]
         if pos and ((p["flat_end"] and hod[i] >= p["sess"][1] and hod[i - 1] < p["sess"][1]) or fri_flat):
             for pz in list(pos):
@@ -172,6 +188,13 @@ def run(d, p):
                 px = pz["sl"] if ((opx > pz["sl"]) if dr == 1 else (opx < pz["sl"])) else opx
                 settle(pz, px, 1.0)
                 done = True
+            elif pz.get("is_c"):
+                if not pz["pdone"] and ((fav >= pz["tp1"]) if dr == 1 else (fav <= pz["tp1"])):
+                    settle(pz, pz["tp1"], p["c_tp1_frac"])
+                    pz["pdone"], pz["sl"] = True, pz["entry"]
+                if pz["pdone"] and ((fav >= pz["tp2"]) if dr == 1 else (fav <= pz["tp2"])):
+                    settle(pz, pz["tp2"], 1.0)
+                    done = True
             else:
                 if p["tp_r"]:
                     tgt = pz["entry"] + dr * p["tp_r"] * pz["r"]
@@ -192,6 +215,8 @@ def run(d, p):
                 day_consec = day_consec + 1 if pz["pnl"] < 0 else 0
                 trades.append(dict(t0=pz["t0"], t1=idx[i], dir=dr, mode=pz["mode"], pnl=pz["pnl"], r=pz["pnl"] / p["risk_usd"]))
                 pos.remove(pz)
+                continue
+            if pz.get("is_c"):
                 continue
             pz["ext"] = max(pz["ext"], fav) if dr == 1 else min(pz["ext"], fav)
             a = atr_[i]

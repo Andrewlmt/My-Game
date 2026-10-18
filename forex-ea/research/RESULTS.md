@@ -115,6 +115,53 @@ Takeaways:
   account that is roughly a 21% drawdown; at 1R = 4.4% (0.02-lot EURUSD on a
   $100 account) it is roughly 47%.
 
+## Counter-trade test (v2.20)
+
+Rule tested: when a position is down 0.6 of its initial stop distance (0.6R),
+open an opposite trade at 50% of its size with its stop at the losing
+position's entry price, close half at TP1 (1x its own stop distance, then
+stop to break-even) and the rest at TP2 (2.5x). One counter per position,
+no re-hedging. Compared with the same final configuration without it:
+
+| Pool | Trades | Net R | Profit factor | Worst drawdown |
+|---|---|---|---|---|
+| Forex development, no counter | 91 | +32.5 | 1.75 | 7.6R |
+| Forex development, counter | 113 | +32.7 | 1.69 | 7.1R |
+| Forex holdout, no counter | 61 | +3.0 | 1.11 | 3.9R |
+| Forex holdout, counter | 77 | +1.3 | 1.04 | 4.7R |
+| Crypto development, no counter | 270 | +150.0 | 2.16 | 10.4R |
+| Crypto development, counter | 318 | +150.1 | 2.08 | 10.6R |
+| Crypto pristine, no counter | 239 | +35.8 | 1.26 | 10.6R |
+| Crypto pristine, counter | 297 | +32.7 | 1.22 | 10.1R |
+
+Other settings tried (trigger 0.4R / 0.8R, 100% size, TP2 at 1.5R / 4R, TP1 at
+0.7R) landed in the same place: profit factor equal or lower in every pool and
+no meaningful drawdown reduction. A hedge pays the spread twice and also cuts
+the winners that begin with a dip, so it did not preserve capital here. It is
+therefore OFF by default.
+
+## Code verification
+
+The EA source was compiled (g++, against a small MetaTrader-compatible shim in
+`verification/`) and run on the same candles as the simulator:
+
+- Signals: 167 of 167 identical (times and direction) across BTC, ETH, EURUSD,
+  GBPUSD and USDJPY.
+- Full trade path through `OnInit`/`RunAll` with a simulated broker (counters
+  off): 84 of 84 entries identical, 81 of 84 exits on the same bar.
+- Counters on: 102 of 102 entries identical including 18 counter-trades;
+  TP1 partial close, break-even move and TP2 behave as in the simulator.
+- Multi-symbol runs with the symbol list (including stray spaces and empty
+  entries) trade every listed symbol and respect the 4-position cap.
+- The remaining differences are end-of-data handling and sub-pip rounding on
+  near-breakeven stops.
+
+Limits: the shim encodes my understanding of MetaTrader's API, so this proves
+the logic matches the research, not that MetaEditor will compile it or that
+the terminal behaves identically. The dashboard text was rendered through the
+shim; its real appearance, and the economic calendar (unavailable in the
+tester), are untested.
+
 ## Not tested
 
 - M15/M5 entries, or entry timeframes other than H1.

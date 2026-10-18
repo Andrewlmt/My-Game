@@ -1,84 +1,69 @@
-# ConfirmedTrendEA v2 (MetaTrader 5)
+# ConfirmedTrendEA v2.20 (MetaTrader 5)
 
-A trend-pullback Expert Advisor for major forex pairs and crypto. It waits for
-a confirmed trend, a volatility expansion and a pullback that resumes, takes a
-small fixed-risk position, and lets a trailing stop run the winners.
+One Expert Advisor, attached once, that trades major forex pairs and crypto
+with a trend-pullback strategy and shows an on-chart status dashboard.
 
 **Read this first:** the evidence is modest. On data not used in design, crypto
 showed a small edge (profit factor about 1.26, interval 0.9 to 1.7) and forex
 was inconclusive (1.11, interval 0.6 to 1.9). Most entries lose; profit comes
-from a minority of large winners. See `research/RESULTS.md` and the
-"Before running live" list below.
+from a minority of large winners. See `research/RESULTS.md`.
 
-## What changed from v1
+## What it does
 
-A cross-check of v1 against hourly data found:
+- **Multi-symbol, one chart.** Attach a single instance to any chart. It trades
+  every symbol in `InpSymbols` (default EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD,
+  USDCAD, NZDUSD, BTCUSD, ETHUSD, XRPUSD). Symbols your broker lacks are
+  skipped with a log message. Use `InpSymbolSuffix` for names like `EURUSD.a`.
+- **Strategy** (closed H1 bars): EMA50 above EMA200, price above EMA200 and
+  ADX >= 20 for an uptrend (mirrored for down); ATR at least 1.2x its 100-bar
+  average; a pullback to the EMA20 zone followed by a bar that closes back
+  through EMA20 with RSI above 50 and rising. Stop 1.5 ATR, trailing stop 3.0
+  ATR, no fixed target.
+- **Schedule (Malaysia time):** entries only on bars opening 3:30pm-11:00pm.
+  Forex Tuesday-Thursday; crypto every day.
+- **Risk:** fixed 0.02 lot by default, capped so no trade risks more than 5% of
+  balance at its stop; optional risk-% sizing; account-wide limits on open risk,
+  positions, entries per day, daily loss and loss streaks; $75 profit target.
+- **Counter-trade (optional, OFF by default):** when a position is down 0.6R,
+  open an opposite trade at 50% size with its stop at the losing position's
+  entry; half is closed at TP1 (stop to break-even), the rest runs to TP2.
+  Needs a hedging account. Testing found it neutral to slightly negative, so it
+  is off unless you switch on `InpCounterEnabled`.
 
-- It fired about once a month per pair and lost $70 over four EURUSD windows
-  (one window alone lost $61 of a $100 account).
-- The "pullback" was never verified, the trend filter was too fast, and a fixed
-  point-based spread cap could not work on crypto.
-- It allowed only one position, could not size crypto safely, and tracked the
-  profit target per chart.
+## Dashboard
 
-v2 adds a volatility-expansion filter, a real pullback test, per-symbol and
-account-wide risk limits, risk-based position sizing, a chandelier trailing
-stop, scale-in only when earlier positions are protected, crypto support and a
-shared profit-target baseline.
+Drawn on the chart where the EA runs (`InpShowDashboard`, dark or light):
 
-## Strategy in one paragraph
-
-On closed H1 bars: the trend is up when EMA50 > EMA200, price is above EMA200
-and ADX(14) >= 20 (mirrored for down). ATR(14) must be at least 1.2x its
-100-bar average. Price must have touched the EMA20 zone within the last 6 bars,
-and the latest bar must close back through EMA20 in the trend direction with
-RSI(14) above 50 and rising. The stop is 1.5 ATR; there is no fixed target. A
-chandelier stop trails 3.0 ATR behind the best price since entry.
-
-## Schedule (Malaysia time, GMT+8)
-
-- Entries only on bars opening 3:30pm-11:00pm Malaysia time, which covers the
-  London open through the London/New York overlap. Trading all 24 hours and
-  trading only the US afternoon were both consistently worse in testing.
-- Forex: Tuesday-Thursday only by default (Monday/Friday toggles available).
-  Crypto: every day.
-- Set `InpBrokerGMTOffset` to your broker's server offset (or enable
-  `InpAutoGMTOffset` for live trading). A wrong offset shifts every filter.
-
-## Position sizing and risk
-
-- Default is the fixed 0.02 lot you asked for, with a hard cap: if the loss at
-  the stop would exceed `InpMaxRiskPerTradePct` (5%) of balance, the lot is
-  reduced, or the trade skipped if even the minimum lot is too big. On a $100
-  account BTC will usually be skipped for this reason.
-- `LOT_RISK_PERCENT` sizes each trade to `InpRiskPercent` of balance instead.
-  For a $100 account, 1-2% is a more survivable choice than 4-5%.
-- Account-wide limits (by magic number, so they cover every chart): total open
-  risk 10% of equity, 4 positions, 6 entries per Malaysia day, stop for the day
-  after an 8% daily loss or 3 consecutive losing closes.
-- Profit target $75 (since the baseline by default, or daily). Reaching it
-  stops new entries and closes open positions.
+- **Account and risk:** balance, equity, floating and today's P/L, progress to
+  the profit target, margin level, free margin, open risk against its cap, daily
+  loss used, entries today, loss streak, positions, session status for forex and
+  crypto, and a status badge (ACTIVE, PAUSED, HALTED).
+- **Pair table:** price, spread as % of ATR, trend on M15, H1, H4 and D1
+  (UP/DN/--), volatility ratio, current state (waiting for pullback, signal,
+  out of session, ...), open positions, net lots and P/L per pair.
+- **Open positions:** pair, side, lots, entry, stop, P/L, R multiple and
+  whether it is a main or counter-trade.
+- **Next high-impact events** from MetaTrader's economic calendar, shown in
+  Malaysia time with a countdown. This works in the live terminal only and
+  depends on the broker providing calendar data.
 
 ## Installation
 
 1. Copy `ConfirmedTrendEA.mq5` into `MQL5/Experts/` and compile in MetaEditor
-   (F7). It has been syntax-checked only against a compatibility shim, not
+   (F7). It was syntax-checked and run through a compatibility shim, never
    compiled in MetaEditor, so confirm there are no errors.
-2. Attach one instance per symbol on any timeframe (it uses `InpEntryTF`, H1 by
-   default, regardless of the chart). Use the same magic number so the
-   account-wide limits work.
-3. Set `InpBrokerGMTOffset`. Enable AutoTrading.
-4. Add the symbols your broker offers, e.g. EURUSD, GBPUSD, BTCUSD, ETHUSD.
-   Symbols are recognised by name; use `InpAssetOverride` for unusual names.
+2. Attach it **once** to any chart and enable AutoTrading. A second instance
+   with the same magic number refuses to start.
+3. Set `InpBrokerGMTOffset` for your broker. Check the Experts tab: it lists the
+   active symbols, asset classes and the counter-trade state.
 
 ## Before running live
 
-- Run the Strategy Tester on your broker's real tick data over at least a year,
-  for each symbol you plan to trade, and then forward-test on a demo account.
+- Run the Strategy Tester on your broker's real tick data over at least a year
+  for the symbols you plan to trade, then forward-test on a demo account.
 - Expect long flat and losing stretches: only 30-44% of entries win.
 - The profit factor fell from 2.16 (development) to 1.26 (unseen) for crypto.
   Plan on the lower figure, then subtract your real costs.
-- Crypto CFDs often charge overnight swaps; holds are typically 7-12 hours but
-  can run for days with the trailing stop.
-- Confirm your broker accepts 0.02 lots (or the minimum lot) on each symbol.
-- The EA has no news filter.
+- On a $100 account the fixed 0.02 lot is aggressive and BTC will usually be
+  skipped by the risk cap. Risk-% sizing at 1-2% is more survivable.
+- Crypto CFDs often charge overnight swaps; the EA has no news filter.
