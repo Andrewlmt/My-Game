@@ -1,67 +1,84 @@
-# ConfirmedTrendEA (MetaTrader 5)
+# ConfirmedTrendEA v2 (MetaTrader 5)
 
-A trend-confirmation Expert Advisor built for a small, high-leverage account,
-trading only on the days and pairs where liquidity is typically best.
+A trend-pullback Expert Advisor for major forex pairs and crypto. It waits for
+a confirmed trend, a volatility expansion and a pullback that resumes, takes a
+small fixed-risk position, and lets a trailing stop run the winners.
 
-## Strategy logic
+**Read this first:** the evidence is modest. On data not used in design, crypto
+showed a small edge (profit factor about 1.26, interval 0.9 to 1.7) and forex
+was inconclusive (1.11, interval 0.6 to 1.9). Most entries lose; profit comes
+from a minority of large winners. See `research/RESULTS.md` and the
+"Before running live" list below.
 
-1. **Trend filter (higher timeframe, default H1):** EMA(50) vs EMA(200)
-   defines direction; ADX(14) above a threshold (default 25) confirms the
-   move is actually trending rather than ranging. No trend confirmation, no
-   trade.
-2. **Entry trigger (chart timeframe):** price pulls back to/through EMA(20)
-   in the trend direction, and RSI(14) crosses back through 50 in that same
-   direction (filtered so it won't chase an already-overbought/oversold
-   move). Signals are evaluated once per closed bar, not every tick.
-3. **Exit:** ATR-based stop-loss and take-profit (defaults 1.5x / 3x ATR),
-   plus an optional ATR trailing stop once in profit.
-4. **Position sizing:** fixed lot size (default 0.02) — matched to a ~$100
-   account at 1:500 leverage. This is not risk-% based sizing; adjust
-   `InpLotSize` if your balance changes materially.
-5. **Trading calendar:** Tuesday–Thursday only by default (skips Monday
-   gaps/low liquidity and Friday's weekend-close risk), within a **Malaysia
-   time (GMT+8)** session window — default 3:30pm–11:00pm, which covers the
-   London/New York overlap where major-pair trends are usually strongest.
-   The EA converts the broker's server clock to Malaysia time using
-   `InpBrokerGMTOffset` (set this to your broker's GMT offset — check your
-   platform or ask your broker; commonly +2 or +3), so the day-of-week and
-   session-hour checks stay correct in Malaysia time no matter what
-   timezone the server runs on.
-6. **Instrument filter:** restricted to the seven major USD pairs
-   (EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, USDCAD, NZDUSD) unless disabled.
-7. **Profit target:** tracks equity minus the balance recorded at `OnInit`.
-   Once floating + realized profit reaches `InpProfitTargetUSD` (default
-   $75), the EA stops opening new trades and, if enabled, closes any open
-   position — locking in gains rather than giving them back.
+## What changed from v1
 
-Only one position is held at a time per symbol/magic number.
+A cross-check of v1 against hourly data found:
+
+- It fired about once a month per pair and lost $70 over four EURUSD windows
+  (one window alone lost $61 of a $100 account).
+- The "pullback" was never verified, the trend filter was too fast, and a fixed
+  point-based spread cap could not work on crypto.
+- It allowed only one position, could not size crypto safely, and tracked the
+  profit target per chart.
+
+v2 adds a volatility-expansion filter, a real pullback test, per-symbol and
+account-wide risk limits, risk-based position sizing, a chandelier trailing
+stop, scale-in only when earlier positions are protected, crypto support and a
+shared profit-target baseline.
+
+## Strategy in one paragraph
+
+On closed H1 bars: the trend is up when EMA50 > EMA200, price is above EMA200
+and ADX(14) >= 20 (mirrored for down). ATR(14) must be at least 1.2x its
+100-bar average. Price must have touched the EMA20 zone within the last 6 bars,
+and the latest bar must close back through EMA20 in the trend direction with
+RSI(14) above 50 and rising. The stop is 1.5 ATR; there is no fixed target. A
+chandelier stop trails 3.0 ATR behind the best price since entry.
+
+## Schedule (Malaysia time, GMT+8)
+
+- Entries only on bars opening 3:30pm-11:00pm Malaysia time, which covers the
+  London open through the London/New York overlap. Trading all 24 hours and
+  trading only the US afternoon were both consistently worse in testing.
+- Forex: Tuesday-Thursday only by default (Monday/Friday toggles available).
+  Crypto: every day.
+- Set `InpBrokerGMTOffset` to your broker's server offset (or enable
+  `InpAutoGMTOffset` for live trading). A wrong offset shifts every filter.
+
+## Position sizing and risk
+
+- Default is the fixed 0.02 lot you asked for, with a hard cap: if the loss at
+  the stop would exceed `InpMaxRiskPerTradePct` (5%) of balance, the lot is
+  reduced, or the trade skipped if even the minimum lot is too big. On a $100
+  account BTC will usually be skipped for this reason.
+- `LOT_RISK_PERCENT` sizes each trade to `InpRiskPercent` of balance instead.
+  For a $100 account, 1-2% is a more survivable choice than 4-5%.
+- Account-wide limits (by magic number, so they cover every chart): total open
+  risk 10% of equity, 4 positions, 6 entries per Malaysia day, stop for the day
+  after an 8% daily loss or 3 consecutive losing closes.
+- Profit target $75 (since the baseline by default, or daily). Reaching it
+  stops new entries and closes open positions.
 
 ## Installation
 
-1. Copy `ConfirmedTrendEA.mq5` into your terminal's
-   `MQL5/Experts/` folder.
-2. Compile it in MetaEditor (F7).
-3. Attach it to a chart of a major pair, on the timeframe you want it to
-   trigger entries on (M15–H1 is reasonable given the H1 trend filter).
-4. Set `InpLotSize`, `InpProfitTargetUSD`, and the trading-day/session
-   inputs to match your broker's server time.
+1. Copy `ConfirmedTrendEA.mq5` into `MQL5/Experts/` and compile in MetaEditor
+   (F7). It has been syntax-checked only against a compatibility shim, not
+   compiled in MetaEditor, so confirm there are no errors.
+2. Attach one instance per symbol on any timeframe (it uses `InpEntryTF`, H1 by
+   default, regardless of the chart). Use the same magic number so the
+   account-wide limits work.
+3. Set `InpBrokerGMTOffset`. Enable AutoTrading.
+4. Add the symbols your broker offers, e.g. EURUSD, GBPUSD, BTCUSD, ETHUSD.
+   Symbols are recognised by name; use `InpAssetOverride` for unusual names.
 
 ## Before running live
 
-- **Backtest and forward-test on a demo account first.** No EA, including
-  this one, guarantees consistent profit — markets change regime, and a
-  trend-following system will have losing streaks in choppy conditions.
-- Confirm your broker's minimum lot/step size accepts 0.02 lots on the
-  pairs you intend to trade.
-- Set `InpBrokerGMTOffset` correctly for your broker before relying on the
-  session window — an incorrect offset shifts both the Tuesday–Thursday
-  and 3:30pm–11:00pm (Malaysia time) filters by however many hours you're
-  off. Most brokers publish their server's GMT offset, or you can compare
-  a chart's timestamp against a known GMT+8 clock.
-- Malaysia doesn't observe daylight saving, but many brokers' servers do
-  (shifting by ±1 hour), so `InpBrokerGMTOffset` may need updating twice a
-  year for those brokers.
-- The profit target resets only when the EA is reloaded/reattached (it
-  measures profit since `OnInit`, i.e. since the EA last started). If you
-  want a strict daily reset, restart the EA each trading day or extend it
-  to track balance at the start of each calendar day.
+- Run the Strategy Tester on your broker's real tick data over at least a year,
+  for each symbol you plan to trade, and then forward-test on a demo account.
+- Expect long flat and losing stretches: only 30-44% of entries win.
+- The profit factor fell from 2.16 (development) to 1.26 (unseen) for crypto.
+  Plan on the lower figure, then subtract your real costs.
+- Crypto CFDs often charge overnight swaps; holds are typically 7-12 hours but
+  can run for days with the trailing stop.
+- Confirm your broker accepts 0.02 lots (or the minimum lot) on each symbol.
+- The EA has no news filter.
